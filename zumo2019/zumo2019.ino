@@ -1,6 +1,6 @@
-/* 
-ZumoBot Kit
-OSU-Yuan You
+/*
+  ZumoBot Kit
+  OSU-Yuan You
 
 */
 #include <Wire.h>
@@ -8,6 +8,8 @@ OSU-Yuan You
 
 Zumo32U4LCD lcd;
 Zumo32U4ButtonA buttonA;
+Zumo32U4ButtonB buttonB;
+Zumo32U4ButtonC buttonC;
 Zumo32U4Buzzer buzzer;
 Zumo32U4Motors motors;
 Zumo32U4LineSensors lineSensors;
@@ -19,7 +21,7 @@ unsigned int lineSensorValues[3];
 // consider that line sensor to have detected the white border at
 // the edge of the ring.  This value might need to be tuned for
 // different lighting conditions, surfaces, etc.
-const uint16_t lineSensorThreshold = 1000;
+const uint16_t lineSensorThreshold = 500;
 
 // The speed that the robot uses when backing up.
 const uint16_t reverseSpeed = 400;
@@ -30,7 +32,7 @@ const uint16_t turnSpeed = 400;
 // The speed that the robot usually uses when moving forward.
 // You don't want this to be too fast because then the robot
 // might fail to stop when it detects the white border.
-const uint16_t forwardSpeed = 400;
+const uint16_t forwardSpeed = 300;
 
 // These two variables specify the speeds to apply to the motors
 // when veering left or veering right.  While the robot is
@@ -91,6 +93,7 @@ enum Direction
 // it scans for an opponent.
 Direction scanDir = DirectionFront;
 
+
 // The time, in milliseconds, that we entered the current top-level state.
 uint16_t stateStartTime;
 
@@ -119,8 +122,9 @@ void setup()
 
 void loop()
 {
-  bool buttonPress = buttonA.getSingleDebouncedPress();
-
+  bool buttonPressA = buttonA.getSingleDebouncedPress();
+  bool buttonPressB = buttonB.getSingleDebouncedPress();
+  bool buttonPressC = buttonC.getSingleDebouncedPress();
   if (state == StatePausing)
   {
     // In this state, we just wait for the user to press button
@@ -147,13 +151,25 @@ void loop()
       lcd.print("YY");
     }
 
-    if (buttonPress)
+    if (buttonPressA)
     {
       // The user pressed button A, so go to the waiting state.
+      scanDir = DirectionLeft;
+      changeState(StateWaiting);
+
+    }
+    else if (buttonPressB)
+    {
+      scanDir = DirectionFront;
+      changeState(StateWaiting);
+    }
+    else if (buttonPressC)
+    {
+      scanDir = DirectionRight;
       changeState(StateWaiting);
     }
   }
-  else if (buttonPress)
+  else if (buttonPressA)
   {
     // The user pressed button A while the robot was running, so pause.
     changeState(StatePausing);
@@ -191,6 +207,12 @@ void loop()
     {
       justChangedState = false;
       lcd.print(F("BACK"));
+      lcd.gotoXY(0, 1);
+      lineSensors.read(lineSensorValues);
+      lcd.print(lineSensorValues[0]);
+
+      //lcd.print(lineSensorValues[1]);
+      lcd.print(lineSensorValues[2]);
     }
 
     motors.setSpeeds(-reverseSpeed, -reverseSpeed);
@@ -211,18 +233,86 @@ void loop()
     {
       justChangedState = false;
       lcd.print(F("SCAN"));
+      lcd.gotoXY(0, 1);
+      lineSensors.read(lineSensorValues);
+      lcd.print(lineSensorValues[0]);
+
+      //lcd.print(lineSensorValues[1]);
+      lcd.print(lineSensorValues[2]);
     }
     if (scanDir == DirectionFront)
     {
-      motors.setSpeeds(forwardSpeed, forwardSpeed);
+      // Check for borders.
+
+      if (lineSensorValues[1] < lineSensorThreshold)
+      {
+        changeState(StateBacking);
+      }
+      else if (lineSensorValues[0] < lineSensorThreshold)
+      {
+        scanDir = DirectionRight;
+        changeState(StateBacking);
+      }
+      else if (lineSensorValues[2] < lineSensorThreshold)
+      {
+        scanDir = DirectionLeft;
+        changeState(StateBacking);
+      }
+      else {
+        lcd.print(F("testfront"));
+        motors.setSpeeds(forwardSpeed, forwardSpeed);
+      }
+
+
     }
-    else if (scanDir == DirectionRight)
+    if (scanDir == DirectionRight)
     {
-      motors.setSpeeds(turnSpeed, -turnSpeed);
+      // Check for borders.
+      lineSensors.read(lineSensorValues);
+
+      if (lineSensorValues[1] < lineSensorThreshold)
+      {
+        changeState(StateBacking);   
+      }
+      else if (lineSensorValues[0] < lineSensorThreshold)
+      {
+        scanDir = DirectionRight;
+        changeState(StateBacking);
+      }
+      else if (lineSensorValues[2] < lineSensorThreshold)
+      {
+        scanDir = DirectionLeft;
+        changeState(StateBacking);
+      }
+      else {
+
+        motors.setSpeeds(turnSpeed, -turnSpeed);
+      }
     }
     else if (scanDir == DirectionLeft)
     {
-      motors.setSpeeds(-turnSpeed, turnSpeed);
+      // Check for borders.
+      lineSensors.read(lineSensorValues);
+
+      if (lineSensorValues[1] < lineSensorThreshold)
+      {
+        changeState(StateBacking);
+      }
+      else if (lineSensorValues[0] < lineSensorThreshold)
+      {
+        scanDir = DirectionRight;
+        changeState(StateBacking);
+      }
+      else if (lineSensorValues[2] < lineSensorThreshold)
+      {
+        scanDir = DirectionLeft;
+        changeState(StateBacking);
+      }
+      else
+      {
+
+        motors.setSpeeds(-turnSpeed, turnSpeed);
+      }
     }
 
     uint16_t time = timeInThisState();
@@ -257,6 +347,11 @@ void loop()
 
     // Check for borders.
     lineSensors.read(lineSensorValues);
+
+    if (lineSensorValues[1] < lineSensorThreshold)
+    {
+      changeState(StateBacking);
+    }
     if (lineSensorValues[0] < lineSensorThreshold)
     {
       scanDir = DirectionRight;
@@ -276,7 +371,7 @@ void loop()
     int8_t diff_of_right_front_sensor = proxSensors.countsRightWithRightLeds() - proxSensors.countsFrontWithRightLeds();
     int8_t diff_of_left_front_sensor = proxSensors.countsLeftWithLeftLeds() - proxSensors.countsFrontWithLeftLeds();
 
-    if (sum_of_front_sensor >= 4 || timeInThisState() > stalemateTime)
+    if (proxSensors.countsFrontWithLeftLeds() >= 2 && proxSensors.countsFrontWithRightLeds() >= 2) //sum_of_front_sensor >= 4)更改测试
     {
       // The front sensor is getting a strong signal, or we have
       // been driving forward for a while now without seeing the
@@ -285,8 +380,6 @@ void loop()
       // push the robot out of the ring.
 
       justChangedState = false;
-      //lcd.gotoXY(0, 0);
-      //lcd.print(F("RAM"));
       proxSensors.read();
       lcd.gotoXY(0, 0);
       lcd.print(proxSensors.countsFrontWithLeftLeds());
@@ -295,14 +388,15 @@ void loop()
       lcd.print(' ');
       lcd.print(' ');
       lcd.print(proxSensors.countsFrontWithRightLeds());
-      lcd.gotoXY(0, 1);
 
+      lcd.gotoXY(0, 1);
       lcd.print(proxSensors.countsLeftWithLeftLeds());
       lcd.print(' ');
       lcd.print("RAM");
       lcd.print(' ');
       lcd.print(' ');
       lcd.print(proxSensors.countsRightWithRightLeds());
+
       motors.setSpeeds(rammingSpeed, rammingSpeed);
 
       // Turn on the red LED when ramming.
@@ -323,14 +417,14 @@ void loop()
         scanDir = DirectionFront;
         changeState(StateScanning);
       }
-      if (proxSensors.countsLeftWithLeftLeds() >= 2)
+      if (proxSensors.countsLeftWithLeftLeds() >= 5)
       {
         // Detected something to the left.
         scanDir = DirectionLeft;
         changeState(StateScanning);
       }
 
-      if (proxSensors.countsRightWithRightLeds() >= 2)
+      if (proxSensors.countsRightWithRightLeds() >= 5)
       {
         // Detected something to the right.
         scanDir = DirectionRight;
@@ -339,34 +433,7 @@ void loop()
 
       ledRed(0);
     }
-    else
-    {
-      // We see something with the front sensor but it is not a
-      // strong reading.
 
-      if (diff_of_front_sensor >= 1)
-      {
-        lcd.gotoXY(0, 0);
-        lcd.print(F("VEER-R"));
-
-        // The right-side reading is stronger, so veer to the right.
-        motors.setSpeeds(veerSpeedHigh, veerSpeedLow);
-      }
-      else if (diff_of_front_sensor <= -1)
-      {
-        lcd.gotoXY(0, 0);
-        lcd.print(F("VEER-L"));
-
-        // The left-side reading is stronger, so veer to the left.
-        motors.setSpeeds(veerSpeedLow, veerSpeedHigh);
-      }
-      else
-      {
-        // Both readings are equal, so just drive forward.
-        motors.setSpeeds(forwardSpeed, forwardSpeed);
-      }
-      ledRed(0);
-    }
   }
 }
 
